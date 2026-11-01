@@ -1,33 +1,53 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class TaskFlowGUI extends JFrame {
 
+    private final Color BACKGROUND = new Color(18, 18, 18);
+    private final Color PANEL = new Color(30, 30, 30);
+    private final Color CARD = new Color(38, 38, 38);
+    private final Color WHITE = new Color(240, 240, 240);
+    private final Color GRAY = new Color(160, 160, 160);
+    private final Color ACCENT = new Color(90, 150, 255);
+    private final Color RED = new Color(235, 90, 90);
+    private final Color ORANGE = new Color(240, 170, 70);
+    private final Color GREEN = new Color(90, 190, 130);
+
+    private final String[] CATEGORIES = {
+            "School", "Work", "Personal", "Projects", "Others"
+    };
+
     private TaskManager taskManager;
 
-    private JPanel taskListPanel;
+    private JPanel taskContainer;
+    private JPanel statisticsPanel;
+    private JProgressBar progressBar;
+
+    private JTextField searchField;
+    private JComboBox<String> filterBox;
+    private JComboBox<String> sortBox;
+    private JComboBox<String> categoryFilterBox;
+
     private JLabel totalLabel;
-    private JLabel completedLabel;
     private JLabel pendingLabel;
-
-    private String currentFilter = "All";
-
-    private final Color BACKGROUND = new Color(24, 24, 27);
-    private final Color PANEL = new Color(39, 39, 42);
-    private final Color CARD = new Color(48, 48, 52);
-    private final Color WHITE = new Color(245, 245, 245);
-    private final Color MUTED = new Color(161, 161, 170);
-    private final Color GREEN = new Color(34, 197, 94);
+    private JLabel completedLabel;
+    private JLabel overdueLabel;
+    private JLabel progressLabel;
 
     public TaskFlowGUI() {
-
         taskManager = new TaskManager();
 
         setTitle("TaskFlow - To-Do List Manager");
-        setSize(950, 700);
-        setMinimumSize(new Dimension(750, 550));
+        setSize(1150, 850);
+        setMinimumSize(new Dimension(950, 700));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         getContentPane().setBackground(BACKGROUND);
@@ -37,353 +57,591 @@ public class TaskFlowGUI extends JFrame {
     }
 
     private void createInterface() {
+        setLayout(new BorderLayout(15, 15));
 
-        JPanel mainPanel = new JPanel(new BorderLayout(20, 20));
+        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
         mainPanel.setBackground(BACKGROUND);
-        mainPanel.setBorder(new EmptyBorder(25, 30, 25, 30));
+        mainPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
 
         // Header
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(BACKGROUND);
 
-        JPanel titlePanel = new JPanel();
-        titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.Y_AXIS));
+        JPanel titlePanel = new JPanel(new GridLayout(2, 1));
         titlePanel.setBackground(BACKGROUND);
 
         JLabel title = new JLabel("TaskFlow");
-        title.setFont(new Font("SansSerif", Font.BOLD, 30));
         title.setForeground(WHITE);
+        title.setFont(new Font("Arial", Font.BOLD, 32));
 
-        JLabel subtitle = new JLabel("Organize your day. Get things done.");
-        subtitle.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        subtitle.setForeground(MUTED);
+        JLabel subtitle = new JLabel("Organize your work. Track your progress.");
+        subtitle.setForeground(GRAY);
+        subtitle.setFont(new Font("Arial", Font.PLAIN, 14));
 
         titlePanel.add(title);
-        titlePanel.add(Box.createVerticalStrut(5));
         titlePanel.add(subtitle);
 
-        JButton addButton = new JButton("+ Add Task");
-        styleButton(addButton, GREEN, Color.BLACK);
+        JButton addButton = createButton("+ Add Task", ACCENT);
         addButton.addActionListener(e -> addTask());
 
         header.add(titlePanel, BorderLayout.WEST);
         header.add(addButton, BorderLayout.EAST);
 
         // Statistics
-        JPanel statistics = new JPanel(new GridLayout(1, 3, 15, 0));
-        statistics.setBackground(BACKGROUND);
+        statisticsPanel = new JPanel(new GridLayout(1, 4, 12, 0));
+        statisticsPanel.setBackground(BACKGROUND);
 
-        totalLabel = createStatCard(statistics, "TOTAL TASKS", "0");
-        pendingLabel = createStatCard(statistics, "PENDING", "0");
-        completedLabel = createStatCard(statistics, "COMPLETED", "0");
+        totalLabel = new JLabel("0");
+        pendingLabel = new JLabel("0");
+        completedLabel = new JLabel("0");
+        overdueLabel = new JLabel("0");
 
-        // Filters
-        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        filterPanel.setBackground(BACKGROUND);
+        statisticsPanel.add(createStatCard("Total Tasks", totalLabel));
+        statisticsPanel.add(createStatCard("Pending", pendingLabel));
+        statisticsPanel.add(createStatCard("Completed", completedLabel));
+        statisticsPanel.add(createStatCard("Overdue", overdueLabel));
 
-        String[] filters = {"All", "Pending", "Completed"};
+        // Progress
+        JPanel progressPanel = new JPanel(new BorderLayout(10, 8));
+        progressPanel.setBackground(PANEL);
+        progressPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
 
-        for (String filter : filters) {
+        progressLabel = new JLabel("Completion Progress: 0%");
+        progressLabel.setForeground(WHITE);
+        progressLabel.setFont(new Font("Arial", Font.BOLD, 13));
 
-            JButton filterButton = new JButton(filter);
-            styleButton(filterButton, PANEL, WHITE);
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        progressBar.setForeground(GREEN);
+        progressBar.setBackground(CARD);
 
-            filterButton.addActionListener(e -> {
-                currentFilter = filter;
-                refreshTasks();
-            });
+        progressPanel.add(progressLabel, BorderLayout.NORTH);
+        progressPanel.add(progressBar, BorderLayout.CENTER);
 
-            filterPanel.add(filterButton);
+        // Search and filters
+        JPanel controlPanel = new JPanel(new GridLayout(2, 4, 10, 10));
+        controlPanel.setBackground(BACKGROUND);
+
+        searchField = new JTextField();
+        searchField.setBackground(PANEL);
+        searchField.setForeground(WHITE);
+        searchField.setCaretColor(WHITE);
+        searchField.setFont(new Font("Arial", Font.PLAIN, 14));
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(CARD),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+        searchField.setToolTipText("Search tasks by title, description, or category");
+
+        filterBox = new JComboBox<>(
+                new String[]{"All Statuses", "Pending", "Completed"}
+        );
+
+        sortBox = new JComboBox<>(
+                new String[]{
+                        "Default Order",
+                        "Priority: High to Low",
+                        "Due Date: Earliest First"
+                }
+        );
+
+        categoryFilterBox = new JComboBox<>();
+        categoryFilterBox.addItem("All Categories");
+
+        for (String category : CATEGORIES) {
+            categoryFilterBox.addItem(category);
         }
 
-        // Task list
-        taskListPanel = new JPanel();
-        taskListPanel.setLayout(new BoxLayout(taskListPanel, BoxLayout.Y_AXIS));
-        taskListPanel.setBackground(BACKGROUND);
+        styleComboBox(filterBox);
+        styleComboBox(sortBox);
+        styleComboBox(categoryFilterBox);
 
-        JScrollPane scrollPane = new JScrollPane(taskListPanel);
+        JButton clearButton = createButton("Clear Completed", RED);
+        clearButton.addActionListener(e -> clearCompletedTasks());
+
+        controlPanel.add(searchField);
+        controlPanel.add(filterBox);
+        controlPanel.add(sortBox);
+        controlPanel.add(categoryFilterBox);
+        controlPanel.add(clearButton);
+        controlPanel.add(new JLabel());
+        controlPanel.add(new JLabel());
+        controlPanel.add(new JLabel());
+
+        JPanel topPanel = new JPanel();
+        topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
+        topPanel.setBackground(BACKGROUND);
+
+        topPanel.add(header);
+        topPanel.add(Box.createVerticalStrut(20));
+        topPanel.add(statisticsPanel);
+        topPanel.add(Box.createVerticalStrut(15));
+        topPanel.add(progressPanel);
+        topPanel.add(Box.createVerticalStrut(15));
+        topPanel.add(controlPanel);
+
+        // Task list
+        taskContainer = new JPanel();
+        taskContainer.setLayout(new BoxLayout(taskContainer, BoxLayout.Y_AXIS));
+        taskContainer.setBackground(BACKGROUND);
+
+        JScrollPane scrollPane = new JScrollPane(taskContainer);
         scrollPane.setBorder(null);
         scrollPane.getViewport().setBackground(BACKGROUND);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        JPanel contentPanel = new JPanel(new BorderLayout(0, 15));
-        contentPanel.setBackground(BACKGROUND);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
+        mainPanel.add(scrollPane, BorderLayout.CENTER);
 
-        JPanel topContent = new JPanel();
-        topContent.setLayout(new BoxLayout(topContent, BoxLayout.Y_AXIS));
-        topContent.setBackground(BACKGROUND);
+        add(mainPanel, BorderLayout.CENTER);
 
-        topContent.add(statistics);
-        topContent.add(Box.createVerticalStrut(25));
-        topContent.add(filterPanel);
+        // Search listener
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) {
+                refreshTasks();
+            }
 
-        contentPanel.add(topContent, BorderLayout.NORTH);
-        contentPanel.add(scrollPane, BorderLayout.CENTER);
+            public void removeUpdate(DocumentEvent e) {
+                refreshTasks();
+            }
 
-        // Footer
-        JLabel footer = new JLabel("TaskFlow | Stay productive.");
-        footer.setForeground(MUTED);
-        footer.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            public void changedUpdate(DocumentEvent e) {
+                refreshTasks();
+            }
+        });
 
-        mainPanel.add(header, BorderLayout.NORTH);
-        mainPanel.add(contentPanel, BorderLayout.CENTER);
-        mainPanel.add(footer, BorderLayout.SOUTH);
-
-        add(mainPanel);
+        filterBox.addActionListener(e -> refreshTasks());
+        sortBox.addActionListener(e -> refreshTasks());
+        categoryFilterBox.addActionListener(e -> refreshTasks());
     }
 
-    private JLabel createStatCard(JPanel parent, String title, String value) {
-
-        JPanel card = new JPanel();
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+    private JPanel createStatCard(String title, JLabel valueLabel) {
+        JPanel card = new JPanel(new BorderLayout(5, 5));
         card.setBackground(PANEL);
-        card.setBorder(new EmptyBorder(15, 18, 15, 18));
+        card.setBorder(new EmptyBorder(15, 15, 15, 15));
 
-        JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
-        titleLabel.setForeground(MUTED);
+        JLabel heading = new JLabel(title);
+        heading.setForeground(GRAY);
+        heading.setFont(new Font("Arial", Font.PLAIN, 12));
 
-        JLabel valueLabel = new JLabel(value);
-        valueLabel.setFont(new Font("SansSerif", Font.BOLD, 25));
         valueLabel.setForeground(WHITE);
+        valueLabel.setFont(new Font("Arial", Font.BOLD, 25));
 
-        card.add(titleLabel);
-        card.add(Box.createVerticalStrut(8));
-        card.add(valueLabel);
+        card.add(heading, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
 
-        parent.add(card);
-
-        return valueLabel;
+        return card;
     }
 
-    private void styleButton(JButton button, Color background, Color foreground) {
-
-        button.setBackground(background);
-        button.setForeground(foreground);
+    private JButton createButton(String text, Color color) {
+        JButton button = new JButton(text);
+        button.setBackground(color);
+        button.setForeground(Color.WHITE);
         button.setFocusPainted(false);
         button.setBorderPainted(false);
-        button.setOpaque(true);
-        button.setFont(new Font("SansSerif", Font.BOLD, 12));
+        button.setFont(new Font("Arial", Font.BOLD, 12));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setBorder(new EmptyBorder(10, 16, 10, 16));
+        button.setMargin(new Insets(10, 15, 10, 15));
+
+        return button;
     }
 
-    // Add a new task
-    private void addTask() {
+    private void styleComboBox(JComboBox<String> comboBox) {
+        comboBox.setBackground(PANEL);
+        comboBox.setForeground(WHITE);
+        comboBox.setFont(new Font("Arial", Font.PLAIN, 13));
+    }
 
+    private void addTask() {
         JTextField titleField = new JTextField();
         JTextArea descriptionArea = new JTextArea(4, 20);
-        descriptionArea.setLineWrap(true);
-        descriptionArea.setWrapStyleWord(true);
+        JComboBox<String> priorityBox = new JComboBox<>(
+                new String[]{"Low", "Medium", "High"}
+        );
+        JComboBox<String> categoryBox = new JComboBox<>(CATEGORIES);
+        JTextField dueDateField = new JTextField();
 
-        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
+        priorityBox.setSelectedItem("Medium");
+        categoryBox.setSelectedItem("Personal");
 
-        panel.add(new JLabel("Task Title:"));
-        panel.add(titleField);
-        panel.add(new JLabel("Description:"));
-        panel.add(new JScrollPane(descriptionArea));
+        JPanel panel = createTaskForm(
+                titleField, descriptionArea,
+                priorityBox, categoryBox, dueDateField
+        );
 
         int result = JOptionPane.showConfirmDialog(
                 this,
                 panel,
-                "Create New Task",
-                JOptionPane.OK_CANCEL_OPTION
+                "Add New Task",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
         );
 
-        if (result == JOptionPane.OK_OPTION) {
+        if (result != JOptionPane.OK_OPTION) return;
 
-            String title = titleField.getText().trim();
-            String description = descriptionArea.getText().trim();
+        String title = titleField.getText().trim();
+        String description = descriptionArea.getText().trim();
+        String priority = (String) priorityBox.getSelectedItem();
+        String category = (String) categoryBox.getSelectedItem();
+        String dueDate = dueDateField.getText().trim();
 
-            if (title.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please enter a task title.");
-                return;
-            }
-
-            taskManager.addTask(new Task(title, description));
-
-            currentFilter = "All";
-            refreshTasks();
+        if (title.isEmpty()) {
+            showMessage("Please enter a task title.");
+            return;
         }
+
+        if (!isValidDate(dueDate)) {
+            showMessage("Invalid date. Use YYYY-MM-DD.");
+            return;
+        }
+
+        Task task = new Task(
+                title, description, priority, dueDate, category
+        );
+
+        taskManager.addTask(task);
+        refreshTasks();
     }
 
-    // Edit a task
     private void editTask(int index) {
+        if (index < 0 || index >= taskManager.getTasks().size()) return;
 
         Task task = taskManager.getTasks().get(index);
 
         JTextField titleField = new JTextField(task.getTitle());
-        JTextArea descriptionArea = new JTextArea(task.getDescription(), 4, 20);
+        JTextArea descriptionArea = new JTextArea(
+                task.getDescription(), 4, 20
+        );
 
-        descriptionArea.setLineWrap(true);
-        descriptionArea.setWrapStyleWord(true);
+        JComboBox<String> priorityBox = new JComboBox<>(
+                new String[]{"Low", "Medium", "High"}
+        );
 
-        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
+        JComboBox<String> categoryBox = new JComboBox<>(CATEGORIES);
+        JTextField dueDateField = new JTextField(task.getDueDate());
 
-        panel.add(new JLabel("Task Title:"));
-        panel.add(titleField);
-        panel.add(new JLabel("Description:"));
-        panel.add(new JScrollPane(descriptionArea));
+        priorityBox.setSelectedItem(task.getPriority());
+
+        if (categoryBox.getItemCount() > 0) {
+            categoryBox.setSelectedItem(task.getCategory());
+        }
+
+        JPanel panel = createTaskForm(
+                titleField, descriptionArea,
+                priorityBox, categoryBox, dueDateField
+        );
 
         int result = JOptionPane.showConfirmDialog(
                 this,
                 panel,
                 "Edit Task",
-                JOptionPane.OK_CANCEL_OPTION
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
         );
 
-        if (result == JOptionPane.OK_OPTION) {
+        if (result != JOptionPane.OK_OPTION) return;
 
-            String title = titleField.getText().trim();
-            String description = descriptionArea.getText().trim();
+        String title = titleField.getText().trim();
+        String description = descriptionArea.getText().trim();
+        String priority = (String) priorityBox.getSelectedItem();
+        String category = (String) categoryBox.getSelectedItem();
+        String dueDate = dueDateField.getText().trim();
 
-            if (title.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Task title cannot be empty.");
-                return;
-            }
+        if (title.isEmpty()) {
+            showMessage("Task title cannot be empty.");
+            return;
+        }
 
-            taskManager.editTask(index, title, description);
-            refreshTasks();
+        if (!isValidDate(dueDate)) {
+            showMessage("Invalid date. Use YYYY-MM-DD.");
+            return;
+        }
+
+        taskManager.updateTaskDetails(
+                index, title, description, priority, dueDate, category
+        );
+
+        refreshTasks();
+    }
+
+    private JPanel createTaskForm(
+            JTextField titleField,
+            JTextArea descriptionArea,
+            JComboBox<String> priorityBox,
+            JComboBox<String> categoryBox,
+            JTextField dueDateField) {
+
+        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
+        panel.setPreferredSize(new Dimension(380, 380));
+
+        panel.add(new JLabel("Task Title"));
+        panel.add(titleField);
+
+        panel.add(new JLabel("Description"));
+        panel.add(new JScrollPane(descriptionArea));
+
+        panel.add(new JLabel("Priority"));
+        panel.add(priorityBox);
+
+        panel.add(new JLabel("Category"));
+        panel.add(categoryBox);
+
+        panel.add(new JLabel("Due Date (YYYY-MM-DD, optional)"));
+        panel.add(dueDateField);
+
+        return panel;
+    }
+
+    private boolean isValidDate(String date) {
+        if (date.isEmpty()) return true;
+
+        try {
+            LocalDate.parse(date);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
         }
     }
 
-    // Delete a task
     private void deleteTask(int index) {
+        if (index < 0 || index >= taskManager.getTasks().size()) return;
 
-        int result = JOptionPane.showConfirmDialog(
+        int choice = JOptionPane.showConfirmDialog(
                 this,
                 "Are you sure you want to delete this task?",
-                "Confirm Deletion",
+                "Confirm Delete",
                 JOptionPane.YES_NO_OPTION
         );
 
-        if (result == JOptionPane.YES_OPTION) {
-
+        if (choice == JOptionPane.YES_OPTION) {
             taskManager.deleteTask(index);
             refreshTasks();
         }
     }
 
-    // Refresh task list and statistics
-    private void refreshTasks() {
-
-        taskListPanel.removeAll();
-
-        List<Task> tasks = taskManager.getTasks();
-
-        totalLabel.setText(String.valueOf(tasks.size()));
-        pendingLabel.setText(String.valueOf(taskManager.getPendingCount()));
-        completedLabel.setText(String.valueOf(taskManager.getCompletedCount()));
-
-        boolean found = false;
-
-        for (int i = 0; i < tasks.size(); i++) {
-
-            Task task = tasks.get(i);
-
-            if (currentFilter.equals("Pending") && task.isCompleted()) {
-                continue;
-            }
-
-            if (currentFilter.equals("Completed") && !task.isCompleted()) {
-                continue;
-            }
-
-            found = true;
-
-            taskListPanel.add(createTaskCard(task, i));
-            taskListPanel.add(Box.createVerticalStrut(12));
+    private void clearCompletedTasks() {
+        if (taskManager.getCompletedCount() == 0) {
+            showMessage("There are no completed tasks to clear.");
+            return;
         }
 
-        if (!found) {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Delete all completed tasks?",
+                "Clear Completed Tasks",
+                JOptionPane.YES_NO_OPTION
+        );
 
-            JLabel emptyLabel = new JLabel("No tasks found. Add a new task!");
-            emptyLabel.setForeground(MUTED);
-            emptyLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
-
-            emptyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-            taskListPanel.add(Box.createVerticalStrut(30));
-            taskListPanel.add(emptyLabel);
+        if (choice == JOptionPane.YES_OPTION) {
+            taskManager.clearCompletedTasks();
+            refreshTasks();
         }
-
-        taskListPanel.revalidate();
-        taskListPanel.repaint();
     }
 
-    // Create individual task card
-    private JPanel createTaskCard(Task task, int index) {
+    private void showMessage(String message) {
+        JOptionPane.showMessageDialog(this, message);
+    }
 
-        JPanel card = new JPanel(new BorderLayout(15, 5));
-        card.setBackground(CARD);
-        card.setBorder(new EmptyBorder(15, 18, 15, 18));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
-        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+    private void refreshTasks() {
+        taskContainer.removeAll();
 
-        JCheckBox completedBox = new JCheckBox();
-        completedBox.setSelected(task.isCompleted());
-        completedBox.setBackground(CARD);
-        completedBox.setFocusPainted(false);
+        List<Task> displayedTasks =
+                new ArrayList<>(taskManager.getTasks());
 
-        completedBox.addActionListener(e -> {
+        // Search
+        String keyword = searchField.getText().trim();
 
-            taskManager.toggleTaskStatus(index);
-            refreshTasks();
-        });
-
-        JPanel information = new JPanel();
-        information.setLayout(new BoxLayout(information, BoxLayout.Y_AXIS));
-        information.setBackground(CARD);
-
-        JLabel title = new JLabel(task.getTitle());
-        title.setFont(new Font("SansSerif", Font.BOLD, 15));
-        title.setForeground(task.isCompleted() ? MUTED : WHITE);
-
-        if (task.isCompleted()) {
-            title.setText("✓ " + task.getTitle());
+        if (!keyword.isEmpty()) {
+            displayedTasks.retainAll(taskManager.searchTasks(keyword));
         }
 
-        JLabel description = new JLabel(
+        // Status filter
+        String status = (String) filterBox.getSelectedItem();
+
+        if ("Pending".equals(status)) {
+            displayedTasks.removeIf(Task::isCompleted);
+        } else if ("Completed".equals(status)) {
+            displayedTasks.removeIf(task -> !task.isCompleted());
+        }
+
+        // Category filter
+        String category = (String) categoryFilterBox.getSelectedItem();
+
+        if (category != null && !category.equals("All Categories")) {
+            displayedTasks.removeIf(
+                    task -> !task.getCategory().equalsIgnoreCase(category)
+            );
+        }
+
+        // Sorting
+        String sort = (String) sortBox.getSelectedItem();
+
+        if ("Priority: High to Low".equals(sort)) {
+            displayedTasks.sort(Comparator.comparingInt(task -> {
+                switch (task.getPriority().toLowerCase()) {
+                    case "high": return 1;
+                    case "medium": return 2;
+                    case "low": return 3;
+                    default: return 4;
+                }
+            }));
+        } else if ("Due Date: Earliest First".equals(sort)) {
+            displayedTasks.sort((task1, task2) -> {
+                String date1 = task1.getDueDate();
+                String date2 = task2.getDueDate();
+
+                if (date1.isEmpty()) return 1;
+                if (date2.isEmpty()) return -1;
+
+                return date1.compareTo(date2);
+            });
+        }
+
+        // Statistics
+        totalLabel.setText(String.valueOf(taskManager.getTasks().size()));
+        pendingLabel.setText(String.valueOf(taskManager.getPendingCount()));
+        completedLabel.setText(String.valueOf(taskManager.getCompletedCount()));
+        overdueLabel.setText(String.valueOf(taskManager.getOverdueCount()));
+
+        int progress = (int) taskManager.getCompletionPercentage();
+
+        progressBar.setValue(progress);
+        progressLabel.setText("Completion Progress: " + progress + "%");
+
+        if (displayedTasks.isEmpty()) {
+            JLabel emptyLabel = new JLabel("No tasks found.");
+            emptyLabel.setForeground(GRAY);
+            emptyLabel.setFont(new Font("Arial", Font.PLAIN, 15));
+            emptyLabel.setBorder(new EmptyBorder(30, 10, 10, 10));
+
+            taskContainer.add(emptyLabel);
+        }
+
+        for (Task task : displayedTasks) {
+            int originalIndex = taskManager.getTasks().indexOf(task);
+
+            taskContainer.add(
+                    createTaskCard(task, originalIndex)
+            );
+
+            taskContainer.add(Box.createVerticalStrut(10));
+        }
+
+        taskContainer.revalidate();
+        taskContainer.repaint();
+    }
+
+    private JPanel createTaskCard(Task task, int index) {
+        JPanel card = new JPanel(new BorderLayout(10, 8));
+        card.setBackground(CARD);
+        card.setBorder(new EmptyBorder(15, 15, 15, 15));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170));
+
+        JPanel details = new JPanel();
+        details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
+        details.setBackground(CARD);
+
+        JLabel titleLabel = new JLabel(task.getTitle());
+
+        titleLabel.setForeground(
+                task.isCompleted() ? GRAY : WHITE
+        );
+
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 17));
+
+        JLabel descriptionLabel = new JLabel(
                 task.getDescription().isEmpty()
                         ? "No description"
                         : task.getDescription()
         );
 
-        description.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        description.setForeground(MUTED);
+        descriptionLabel.setForeground(GRAY);
+        descriptionLabel.setFont(new Font("Arial", Font.PLAIN, 12));
 
-        JLabel status = new JLabel(
+        JLabel informationLabel = new JLabel(
+                "Priority: " + task.getPriority()
+                        + "   |   Category: " + task.getCategory()
+        );
+
+        informationLabel.setForeground(getPriorityColor(task.getPriority()));
+        informationLabel.setFont(new Font("Arial", Font.BOLD, 12));
+
+        JLabel dateLabel = new JLabel(
+                task.getDueDate().isEmpty()
+                        ? "No due date"
+                        : "Due: " + task.getDueDate()
+        );
+
+        dateLabel.setForeground(GRAY);
+        dateLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+
+        if (taskManager.isOverdue(task)) {
+            dateLabel.setText("OVERDUE - " + task.getDueDate());
+            dateLabel.setForeground(RED);
+        }
+
+        JLabel statusLabel = new JLabel(
                 task.isCompleted() ? "Completed" : "Pending"
         );
 
-        status.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        status.setForeground(task.isCompleted() ? GREEN : MUTED);
+        statusLabel.setForeground(
+                task.isCompleted() ? GREEN : ORANGE
+        );
 
-        information.add(title);
-        information.add(Box.createVerticalStrut(5));
-        information.add(description);
-        information.add(Box.createVerticalStrut(5));
-        information.add(status);
+        details.add(titleLabel);
+        details.add(Box.createVerticalStrut(5));
+        details.add(descriptionLabel);
+        details.add(Box.createVerticalStrut(8));
+        details.add(informationLabel);
+        details.add(Box.createVerticalStrut(5));
+        details.add(dateLabel);
+        details.add(Box.createVerticalStrut(5));
+        details.add(statusLabel);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        JPanel actions = new JPanel(
+                new FlowLayout(FlowLayout.RIGHT, 5, 5)
+        );
+
         actions.setBackground(CARD);
 
-        JButton editButton = new JButton("Edit");
-        JButton deleteButton = new JButton("Delete");
+        JCheckBox completedBox = new JCheckBox("Done");
+        completedBox.setSelected(task.isCompleted());
+        completedBox.setBackground(CARD);
+        completedBox.setForeground(WHITE);
 
-        styleButton(editButton, PANEL, WHITE);
-        styleButton(deleteButton, PANEL, new Color(248, 113, 113));
+        completedBox.addActionListener(e -> {
+            taskManager.setTaskCompleted(
+                    index, completedBox.isSelected()
+            );
+            refreshTasks();
+        });
 
+        JButton editButton = createButton("Edit", ACCENT);
         editButton.addActionListener(e -> editTask(index));
+
+        JButton deleteButton = createButton("Delete", RED);
         deleteButton.addActionListener(e -> deleteTask(index));
 
+        actions.add(completedBox);
         actions.add(editButton);
         actions.add(deleteButton);
 
-        card.add(completedBox, BorderLayout.WEST);
-        card.add(information, BorderLayout.CENTER);
+        card.add(details, BorderLayout.CENTER);
         card.add(actions, BorderLayout.EAST);
 
         return card;
+    }
+
+    private Color getPriorityColor(String priority) {
+        switch (priority.toLowerCase()) {
+            case "high":
+                return RED;
+            case "medium":
+                return ORANGE;
+            case "low":
+                return GREEN;
+            default:
+                return WHITE;
+        }
     }
 }
